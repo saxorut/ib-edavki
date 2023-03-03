@@ -9,6 +9,7 @@ import re
 import sys
 import urllib.request
 import xml.etree.ElementTree
+import csv
 from collections import defaultdict
 from difflib import SequenceMatcher
 from xml.dom import minidom
@@ -91,6 +92,116 @@ def getCurrencyRate(dateStr, currency, rates):
     return rate
 
 
+"""
+    Import DEGIRO report, which is generated in the following manner. Within DEGIRO choose Transactions report and enable
+    the agreggate order option. Set the report time window beginning at account initiation endingat the end 
+    of the reporting year. Amend the headers in the report by naming the empty column name after the column 'Price'
+    with 'PriceCurrency'. 
+    NOTE: Such a DEGIRO report doesn't include the dividends.
+"""
+def addTradesFromDegiro(tradesByIsin, fileName):
+    if not os.path.isfile(fileName):
+        print("DEGIRO report file not found: " + fileName)
+        return
+    with open("degiro-tx.csv") as tsv:
+        headers = None
+
+        for vals in csv.reader(tsv, delimiter=','):
+            if headers is None:
+                headers = dict(zip(vals, range(0, len(vals))))
+                continue
+            try:
+                float(vals[headers["Price"]])
+                float(vals[headers["Quantity"]])
+            except:
+                print("Parsing warning in DEGIRO trades. Skipping line: " + '|'.join(vals))
+                continue
+            trade = {
+                "isin": vals[headers["ISIN"]],
+                "symbol": vals[headers["Product"]],
+                "currency": vals[headers["PriceCurrency"]],
+                "assetCategory": "STK",
+                "tradePrice": float(vals[headers["Price"]]),
+                "quantity": float(vals[headers["Quantity"]]),
+                "buySell": "SELL" if float(vals[headers["Quantity"]]) < 0  else "BUY",
+                "tradeDate": "".join(vals[headers["Date"]].split('-')[::-1]),
+                "tradeTime": vals[headers["Time"]].replace(":", "") + "00",
+                "transactionID": vals[headers["Order ID"]],
+                "ibOrderID": vals[headers["Order ID"]],
+                "assetCategory": "STK",
+                "description": vals[headers["ISIN"]],
+                "openTransactionIds": {}
+            }
+            # convert GBX currency to GBP
+            if trade["currency"] == "GBX":
+                trade["currency"] = "GBP"
+                trade["tradePrice"] /= 100
+            # add to isin dict
+            if trade["isin"] not in tradesByIsin:
+                tradesByIsin[trade["isin"]] = []
+            tradesByIsin[trade["isin"]].append(trade)
+
+        # compute open/close and add open transaction links to close transactions
+        for isin, trades in tradesByIsin.items():
+            openSum = 0
+            closeCarry = 0
+            openTrades = []
+            def closeOpenTrades(closeTrade):
+                nonlocal openSum, closeCarry, openTrades
+                closeVol = closeTrade["quantity"]
+                dir = 1 if closeVol < 0 else -1
+                closeVol *= -dir    # always a positive
+                while len(openTrades) > 0:
+                    openTrade = openTrades[0]   # fifo close order
+                    delta = dir * openTrade["quantity"] - closeCarry    # always a positive
+                    if delta > closeVol:
+                        closeCarry += closeVol
+                        delta = closeVol
+                    else:
+                        closeCarry = 0
+                        del openTrades[0]
+                    if openTrade["transactionID"] not in closeTrade["openTransactionIds"]:
+                        closeTrade["openTransactionIds"][openTrade["transactionID"]] = dir * delta
+                    else:
+                        closeTrade["openTransactionIds"][openTrade["transactionID"]] += dir * delta
+                    closeVol -= delta
+                    openSum -= dir * delta
+                    if closeVol <= 0: return
+                    if dir * openSum <= 0:
+                        closeCarry = -dir * closeTrade["quantity"] - closeVol  # partially closed mixed order
+                        openSum = -dir * closeVol   # carry on with inverted position
+
+            def tradeByTime(trade):
+                return trade["tradeDate"] + trade["tradeTime"]
+            for trade in sorted(trades, key=tradeByTime):
+                if trade["quantity"] < 0:
+                    if openSum + trade["quantity"] >= 0:
+                        trade["openCloseIndicator"] = "C" # closing long
+                        closeOpenTrades(trade)
+                    elif openSum > 0:
+                        trade["openCloseIndicator"] = "C;O" # from long to short
+                        closeOpenTrades(trade)
+                        openTrades.append(trade)
+                    else:
+                        trade["openCloseIndicator"] = "O" # adding short
+                        openTrades.append(trade)
+                        openSum += trade["quantity"]
+                else:
+                    if openSum + trade["quantity"] <= 0:
+                        trade["openCloseIndicator"] = "C" # closing short
+                        closeOpenTrades(trade)
+                    elif openSum < 0:
+                        trade["openCloseIndicator"] = "C;O" # from short to long
+                        closeOpenTrades(trade)
+                        openTrades.append(trade)
+                    else:
+                        trade["openCloseIndicator"] = "O" # adding long
+                        openTrades.append(trade)
+                        openSum += trade["quantity"]
+            if openSum > 0:
+                print("DEGIRO info: positions remaining opened for " + trades[0]["isin"] + ", value: " + f"{openSum}")
+
+
 def main():
     if not os.path.isfile("taxpayer.xml"):
         print("Modify taxpayer.xml and add your data first!")
@@ -132,6 +243,11 @@ def main():
         "-t",
         help="Change trade dates to previous year (see README.md)",
         action="store_true",
+    )
+    parser.add_argument(
+        "-dg",
+        metavar="degiro-csv-file",
+        help="DEGIRO transactions report CSV file.",
     )
 
     args = parser.parse_args()
@@ -227,6 +343,7 @@ def main():
     ibCashTransactionsList = []
     ibSecuritiesInfoList = []
     ibEntities = []
+
     for ibXmlFilename in ibXmlFilenames:
         ibXml = xml.etree.ElementTree.parse(ibXmlFilename).getroot()
         ibFlexStatements = ibXml[0]
@@ -280,6 +397,9 @@ def main():
     tradesBySecurityId = {}
     tradesByConid = {}
     tradesBySymbol = {}
+
+    if args.dg != None:
+        addTradesFromDegiro(tradesByIsin, args.dg)
 
     """ Get trades from IB XML and sort them by securityID """
     for ibTrades in ibTradesList:
@@ -343,6 +463,18 @@ def main():
                     trade["tradePrice"] = trade["tradePrice"] * float(
                         ibTrade.attrib["multiplier"]
                     )
+                """ If trade is an option exercise, tradePrice is set to 0, but closePrice is the one position was settled for """
+                # TODO: handle warrants exercise
+                if (
+                    trade["assetCategory"] == "OPT"
+                    and ibTrade.attrib["notes"] == "Ex"
+                    and ibTrade.attrib["closePrice"] != ""
+                ):
+                    trade["tradePrice"] = ibTrade.attrib["closePrice"]
+                    if "multiplier" in ibTrade.attrib:
+                        trade["tradePrice"] = float(
+                            ibTrade.attrib["closePrice"]
+                        ) * float(ibTrade.attrib["multiplier"])
 
                 lastTrade = trade
 
@@ -1133,7 +1265,6 @@ def main():
                 ibCashTransaction.tag == "CashTransaction"
                 and ibCashTransaction.attrib["dateTime"].startswith(str(reportYear))
                 and ibCashTransaction.attrib["type"] == "Withholding Tax"
-                and ibCashTransaction.attrib["conid"] != ""
             ):
                 potentiallyMatchingDividends = []
                 for dividend in dividends:

@@ -74,6 +74,15 @@ Leto za katerega se izdelajo popisni listi. Privzeto trenutno leto.
 #### -t (opcijsko)
 eDavki ne omogočajo dodajanje popisnih listov za tekoče leto, temveč le za preteklo. Parameter *-t* spremeni datume vseh poslov v preteklo leto, kar omogoča uvoz popisnih listov in **informativni izračun davka** že za tekoče leto. Konverzija iz tuje valute v EUR je kljub temu opravljena na pravi datum posla.
 
+### DEGIRO
+Dodana je možnost uvoza DEGIRO podatkov. Uvoz se naredi z uporabo argumenta, s katerim navedemo ime datoteke, ki vsebuje podatke o preteklih transakcijah.
+Navodila za 
+```
+Within DEGIRO choose Transactions report and enable the agreggate order option. Set the report time window beginning at account initiation endingat the end 
+of the reporting year. Amend the headers in the report by naming the empty column name after the column 'Price' with 'PriceCurrency'. 
+NOTE: DEGIRO report doesn't include the dividends.
+```
+
 **Pozor: namenjeno informativnemu izračunu, ne oddajaj obrazca napolnjenega s temi podatki!**
 
 #### Dodatni podatki o podjetju za obrazec Doh-Div (opcijsko)
