@@ -93,17 +93,16 @@ def getCurrencyRate(dateStr, currency, rates):
 
 
 """
-    Import DEGIRO report, which is generated in the following manner. Within DEGIRO choose Transactions report and enable
-    the agreggate order option. Set the report time window beginning at account initiation endingat the end 
-    of the reporting year. Amend the headers in the report by naming the empty column name after the column 'Price'
-    with 'PriceCurrency'. 
-    NOTE: Such a DEGIRO report doesn't include the dividends.
+    Import DEGIRO report, which is generated using the following steps. Go to DEGIRO Inbox-Transactions reports and enable
+    the agreggate order option. Set the report time window from the account initiation to the end of the reporting year. 
+    Export CVS file and set the empty report header following the 'Price' column to 'PriceCurrency'. 
+    NOTE: This DEGIRO report doesn't include dividend.
 """
 def addTradesFromDegiro(tradesByIsin, fileName):
     if not os.path.isfile(fileName):
         print("DEGIRO report file not found: " + fileName)
         return
-    with open("degiro-tx.csv") as tsv:
+    with open(fileName) as tsv:
         headers = None
 
         for vals in csv.reader(tsv, delimiter=','):
@@ -463,18 +462,6 @@ def main():
                     trade["tradePrice"] = trade["tradePrice"] * float(
                         ibTrade.attrib["multiplier"]
                     )
-                """ If trade is an option exercise, tradePrice is set to 0, but closePrice is the one position was settled for """
-                # TODO: handle warrants exercise
-                if (
-                    trade["assetCategory"] == "OPT"
-                    and ibTrade.attrib["notes"] == "Ex"
-                    and ibTrade.attrib["closePrice"] != ""
-                ):
-                    trade["tradePrice"] = ibTrade.attrib["closePrice"]
-                    if "multiplier" in ibTrade.attrib:
-                        trade["tradePrice"] = float(
-                            ibTrade.attrib["closePrice"]
-                        ) * float(ibTrade.attrib["multiplier"])
 
                 lastTrade = trade
 
@@ -1265,6 +1252,7 @@ def main():
                 ibCashTransaction.tag == "CashTransaction"
                 and ibCashTransaction.attrib["dateTime"].startswith(str(reportYear))
                 and ibCashTransaction.attrib["type"] == "Withholding Tax"
+                and ibCashTransaction.attrib["conid"] != ""
             ):
                 potentiallyMatchingDividends = []
                 for dividend in dividends:
@@ -1272,8 +1260,8 @@ def main():
                         dividend["dateTime"][0:8]
                         == ibCashTransaction.attrib["dateTime"][0:8]
                         and dividend["symbol"] == ibCashTransaction.attrib["symbol"]
-                        and dividend["transactionID"]
-                        < ibCashTransaction.attrib["transactionID"]
+                        and int(dividend["transactionID"])
+                        < int(ibCashTransaction.attrib["transactionID"])
                     ):
                         potentiallyMatchingDividends.append(dividend)
 

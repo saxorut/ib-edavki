@@ -62,7 +62,7 @@ Kot argument dodaj reporte za vsa leta trgovanja, npr:
 ib_edavki ib-export-2020.xml ib-export-2021.xml ib-export-2022.xml
 ```
 
-Skripta po uspešni konverziji v lokalnem direktoriju ustvari tri datoteke:
+Skripta po uspešni konverziji v lokalnem direktoriju ustvari štiri datoteke:
 * Doh-KDVP.xml (datoteka namenjena uvozu v obrazec Doh-KDVP - Napoved za odmero dohodnine od dobička od odsvojitve vrednostnih papirjev in drugih deležev ter investicijskih kuponov)
 * D-IFI.xml (datoteka namenjena uvozu v obrazec D-IFI - Napoved za odmero davka od dobička od odsvojitve izvedenih finančnih instrumentov)
 * D-Div.xml (datoteka namenjena uvozu v obrazec D-Div - Napoved za odmero dohodnine od dividend)
@@ -76,12 +76,14 @@ eDavki ne omogočajo dodajanje popisnih listov za tekoče leto, temveč le za pr
 
 ### DEGIRO
 Dodana je možnost uvoza DEGIRO podatkov. Uvoz se naredi z uporabo argumenta, s katerim navedemo ime datoteke, ki vsebuje podatke o preteklih transakcijah.
-Navodila za 
+Navodila v kodi: 
 ```
-Within DEGIRO choose Transactions report and enable the agreggate order option. Set the report time window beginning at account initiation endingat the end 
-of the reporting year. Amend the headers in the report by naming the empty column name after the column 'Price' with 'PriceCurrency'. 
-NOTE: DEGIRO report doesn't include the dividends.
+Import DEGIRO report, which is generated using the following steps. Go to DEGIRO Inbox-Transactions reports and enable
+the agreggate order option. Set the report time window from the account initiation to the end of the reporting year. 
+Export CVS file and set the empty report header following the 'Price' column to 'PriceCurrency'. 
+NOTE: This DEGIRO report doesn't include dividend.
 ```
+CVS datoteka se doda v izvajanje skripte s parametrom `-dg`.
 
 **Pozor: namenjeno informativnemu izračunu, ne oddajaj obrazca napolnjenega s temi podatki!**
 
@@ -93,6 +95,10 @@ Obrazec Doh-Div zahteva dodatne podatke o podjetju, ki je izplačalo dividende (
 Obrazec Doh-Obr zahteva dodatne podatke o podružnici IB, ki je izplačevalka obresti Stock Yield Enhancement programa (identifikacijska številka, naziv, naslov, država) in jih v izvirnih podatkih IB-ja ni. Ob prvi uporabi skripta prenese datoteko `ib-affiliates.xml`, ki vsebuje zahtevane podatke za IB United Kingdom, IB Central Europe, IB Ireland in IB Luxembourg, po potrebi pa lahko te podatke spremeniš ali dodaš.
 
 ### Uvoz v eDavke
+>**Pozor**: Obrazec Doh-Div v eDavkih omogoča tudi uvoz podatkov v CSV obliki. `ib-edavki` ne generirajo obrazca Doh-Div v CSV obliki. Namesto uvoza CSV datoteke, se posluži uvoza XML datoteke, kot je opisan v nadaljevanju.
+
+![Dokumenti > Uvoz](readme-uvoz.png)
+
 1. V meniju **Dokument** klikni **Uvoz**. Izberi eno izmed generiranih datotek (Doh-KDVP.xml, D-IFI.xml, Doh-Div.xml, Doh-Obr.xml) in jo **Prenesi**.
 1. Preveri izpolnjene podatke in dodaj manjkajoče.
 1. Pri obrazcih Doh-KDVP in D-IFI je na seznamu popisnih listov po en popisni list za vsak vrednostni papir (ticker).
